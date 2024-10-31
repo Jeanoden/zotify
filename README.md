@@ -28,7 +28,7 @@
 
 #### Command:
 
-`python -m pip install git+https://github.com/Googolplexed0/zotify.git`
+`python -m pip install git+https://github.com/Jeanoden/zotify.git`
 
 See [INSTALLATION](INSTALLATION.md) for a more detailed and opinionated installation walkthrough.
 
