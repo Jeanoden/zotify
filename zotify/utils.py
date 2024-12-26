@@ -12,8 +12,13 @@ import music_tag
 import requests
 
 from zotify.const import ARTIST, GENRE, TRACKTITLE, ALBUM, YEAR, DISCNUMBER, TRACKNUMBER, ARTWORK, \
-    WINDOWS_SYSTEM, LINUX_SYSTEM, ALBUMARTIST, TOTALTRACKS, TOTALDISCS, EXT_MAP
+    WINDOWS_SYSTEM, ALBUMARTIST
 from zotify.zotify import Zotify
+
+
+class MusicFormat(str, Enum):
+    MP3 = 'mp3',
+    OGG = 'ogg',
 
 
 def create_download_directory(download_path: str) -> None:
@@ -22,8 +27,6 @@ def create_download_directory(download_path: str) -> None:
 
     # add hidden file with song ids
     hidden_file_path = PurePath(download_path).joinpath('.song_ids')
-    if Zotify.CONFIG.get_disable_directory_archives():
-        return
     if not Path(hidden_file_path).is_file():
         with open(hidden_file_path, 'w', encoding='utf-8') as f:
             pass
@@ -44,9 +47,9 @@ def get_previously_downloaded() -> List[str]:
 
 def add_to_archive(song_id: str, filename: str, author_name: str, song_name: str) -> None:
     """ Adds song id to all time installed songs archive """
-    
+
     archive_path = Zotify.CONFIG.get_song_archive()
-    
+
     if Path(archive_path).exists():
         with open(archive_path, 'a', encoding='utf-8') as file:
             file.write(f'{song_id}\t{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\t{author_name}\t{song_name}\t{filename}\n')
@@ -55,39 +58,23 @@ def add_to_archive(song_id: str, filename: str, author_name: str, song_name: str
             file.write(f'{song_id}\t{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\t{author_name}\t{song_name}\t{filename}\n')
 
 
-def add_to_m3u(filename: PurePath, song_duration: float, song_name: str) -> None:
-    """ Adds song to a .m3u8 playlist"""
-    
-    m3u_path = Zotify.CONFIG.get_root_path() / (Zotify.datetime_launch + "_zotify.m3u8")
-    if not Path(m3u_path).exists():
-        with open(m3u_path, 'w', encoding='utf-8') as file:
-            file.write("#EXTM3U\n\n")
-    
-    with open(m3u_path, 'a', encoding='utf-8') as file:
-        file.write(f"#EXTINF:{int(song_duration)}, {song_name}\n")
-        file.write(f"{filename}\n\n")
-
-
 def get_directory_song_ids(download_path: str) -> List[str]:
     """ Gets song ids of songs in directory """
-    
+
     song_ids = []
-    
+
     hidden_file_path = PurePath(download_path).joinpath('.song_ids')
-    
-    if Path(hidden_file_path).is_file() and not Zotify.CONFIG.get_disable_directory_archives():
+    if Path(hidden_file_path).is_file():
         with open(hidden_file_path, 'r', encoding='utf-8') as file:
             song_ids.extend([line.strip().split('\t')[0] for line in file.readlines()])
-    
+
     return song_ids
 
 
 def add_to_directory_song_ids(download_path: str, song_id: str, filename: str, author_name: str, song_name: str) -> None:
     """ Appends song_id to .song_ids file in directory """
-    
+
     hidden_file_path = PurePath(download_path).joinpath('.song_ids')
-    if Zotify.CONFIG.get_disable_directory_archives():
-        return
     # not checking if file exists because we need an exception
     # to be raised if something is wrong
     with open(hidden_file_path, 'a', encoding='utf-8') as file:
@@ -96,13 +83,13 @@ def add_to_directory_song_ids(download_path: str, song_id: str, filename: str, a
 
 def get_downloaded_song_duration(filename: str) -> float:
     """ Returns the downloaded file's duration in seconds """
-    
+
     command = ['ffprobe', '-show_entries', 'format=duration', '-i', f'{filename}']
     output = subprocess.run(command, capture_output=True)
-    
+
     duration = re.search(r'[\D]=([\d\.]*)', str(output.stdout)).groups()[0]
     duration = float(duration)
-    
+
     return duration
 
 
@@ -139,10 +126,10 @@ def clear() -> None:
         os.system('clear')
 
 
-def set_audio_tags(filename, artists, genres, name, album_name, album_artist, release_year, disc_number, track_number, total_tracks, total_discs) -> None:
+def set_audio_tags(filename, artists, genres, name, album_name, release_year, disc_number, track_number) -> None:
     """ sets music_tag metadata """
     tags = music_tag.load_file(filename)
-    tags[ALBUMARTIST] = album_artist
+    tags[ALBUMARTIST] = artists[0]
     tags[ARTIST] = conv_artist_format(artists)
     tags[GENRE] = genres[0] if not Zotify.CONFIG.get_all_genres() else Zotify.CONFIG.get_all_genres_delimiter().join(genres)
     tags[TRACKTITLE] = name
@@ -150,19 +137,6 @@ def set_audio_tags(filename, artists, genres, name, album_name, album_artist, re
     tags[YEAR] = release_year
     tags[DISCNUMBER] = disc_number
     tags[TRACKNUMBER] = track_number
-    
-    if Zotify.CONFIG.get_disc_track_totals():
-        tags[TOTALTRACKS] = total_tracks
-        if total_discs is not None:
-            tags[TOTALDISCS] = total_discs
-    
-    ext = EXT_MAP[Zotify.CONFIG.get_download_format().lower()]
-    if ext == "mp3" and not Zotify.CONFIG.get_disc_track_totals():
-        # music_tag python library writes DISCNUMBER and TRACKNUMBER as X/Y instead of X for mp3
-        # this method bypasses all internal formatting, probably not resilient against arbitrary inputs
-        tags.set_raw("mp3", "TPOS", str(disc_number))
-        tags.set_raw("mp3", "TRCK", str(track_number))
-    
     tags.save()
 
 
@@ -184,42 +158,42 @@ def regex_input_for_urls(search_input) -> Tuple[str, str, str, str, str, str]:
     track_uri_search = re.search(
         r'^spotify:track:(?P<TrackID>[0-9a-zA-Z]{22})$', search_input)
     track_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/track/(?P<TrackID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/track/(?P<TrackID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
     album_uri_search = re.search(
         r'^spotify:album:(?P<AlbumID>[0-9a-zA-Z]{22})$', search_input)
     album_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/album/(?P<AlbumID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/album/(?P<AlbumID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
     playlist_uri_search = re.search(
         r'^spotify:playlist:(?P<PlaylistID>[0-9a-zA-Z]{22})$', search_input)
     playlist_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/playlist/(?P<PlaylistID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/playlist/(?P<PlaylistID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
     episode_uri_search = re.search(
         r'^spotify:episode:(?P<EpisodeID>[0-9a-zA-Z]{22})$', search_input)
     episode_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/episode/(?P<EpisodeID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/episode/(?P<EpisodeID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
     show_uri_search = re.search(
         r'^spotify:show:(?P<ShowID>[0-9a-zA-Z]{22})$', search_input)
     show_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/show/(?P<ShowID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/show/(?P<ShowID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
     artist_uri_search = re.search(
         r'^spotify:artist:(?P<ArtistID>[0-9a-zA-Z]{22})$', search_input)
     artist_url_search = re.search(
-        r'^(https?://)?open\.spotify\.com(?:/intl-\w+)?/artist/(?P<ArtistID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
+        r'^(https?://)?open\.spotify\.com/artist/(?P<ArtistID>[0-9a-zA-Z]{22})(\?si=.+?)?$',
         search_input,
     )
 
@@ -284,12 +258,7 @@ def fix_filename(name):
     >>> all('_' == fix_filename(chr(i)) for i in list(range(32)))
     True
     """
-    if platform.system() == WINDOWS_SYSTEM:
-        return re.sub(r'[/\\:|<>"?*\0-\x1f]|^(AUX|COM[1-9]|CON|LPT[1-9]|NUL|PRN)(?![^.])|^\s|[\s.]$', "_", str(name), flags=re.IGNORECASE)
-    elif platform.system() == LINUX_SYSTEM:
-        return re.sub(r'[/\0]', "_", str(name))
-    else: # MacOS
-        return re.sub(r'[/:\0]', "_", str(name))
+    return re.sub(r'[/\\:|<>"?*\0-\x1f]|^(AUX|COM[1-9]|CON|LPT[1-9]|NUL|PRN)(?![^.])|^\s|[\s.]$', "_", str(name), flags=re.IGNORECASE)
 
 
 def fmt_seconds(secs: float) -> str:
