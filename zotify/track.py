@@ -187,9 +187,7 @@ def download_track(mode: str, track_id: str, extra_keys=None, wrapper_p_bars: li
         filename_temp = filename
         if Zotify.CONFIG.get_temp_download_dir() != '':
             filename_temp = PurePath(Zotify.CONFIG.get_temp_download_dir()).joinpath(f'zotify_{str(uuid.uuid4())}_{track_id}.{ext}')
-        
-        c = len([file for file in Path(filedir).iterdir() if re.search(fr'^{re.escape(str(filename))}_', str(file))]) + 1
-        
+            
         check_name = Path(filename).is_file() and Path(filename).stat().st_size
         check_local = scraped_song_id in get_directory_song_ids(filedir)
         check_all_time = scraped_song_id in get_previously_downloaded()
@@ -199,7 +197,7 @@ def download_track(mode: str, track_id: str, extra_keys=None, wrapper_p_bars: li
         
         # same filename, not same song_id, rename the newcomer
         if not check_local and check_name:
-            c = len([file for file in Path(filedir).iterdir() if file.match(filename.stem + "*")])
+            c = len([file for file in Path(filedir).iterdir() if re.search(fr'^{re.escape(str(filename))}_', str(file))]) + 1
             filename = PurePath(filedir).joinpath(f'{filename.stem}_{c}{filename.suffix}')
         
         if Zotify.CONFIG.get_export_m3u8():
